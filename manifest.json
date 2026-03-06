@@ -1,0 +1,39 @@
+{
+  "schemaVersion" : "1.0",
+  "project" : "demo-project",
+  "sourceCommit" : "0000000000000000000000000000000000000000",
+  "generatedAt" : "2026-03-06T15:00:00.000000000Z",
+  "models" : [
+    {
+      "name" : "orders",
+      "title" : "订单表",
+      "filePath" : "models/orders.yml"
+    },
+    {
+      "name" : "customers",
+      "title" : "客户表",
+      "filePath" : "models/customers.yml"
+    }
+  ],
+  "views" : [
+    {
+      "name" : "orders_view",
+      "title" : "订单视图",
+      "filePath" : "views/orders_view.yml"
+    }
+  ],
+  "dependencyGraph" : {
+    "orders" : {
+      "baseModels" : [],
+      "dependencies" : []
+    },
+    "customers" : {
+      "baseModels" : [],
+      "dependencies" : []
+    },
+    "orders_view" : {
+      "baseModels" : [],
+      "dependencies" : ["orders"]
+    }
+  }
+}
