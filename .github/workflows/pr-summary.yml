@@ -32,8 +32,32 @@ jobs:
           MODIFIED=$(grep "^modified" /tmp/changed_files.txt | cut -f2 || true)
           REMOVED=$(grep "^removed" /tmp/changed_files.txt | cut -f2 || true)
 
+          # 统计删除数量
+          REMOVED_COUNT=0
+          if [ -n "$REMOVED" ]; then
+            REMOVED_COUNT=$(echo "$REMOVED" | wc -l | tr -d ' ')
+          fi
+
+          # 判断版本影响 label
+          # major-change: 删除 > 5 个
+          # minor-change: 有新增，或有删除 <= 5 个
+          # patch-change: 只有修改，无新增无删除
+          VERSION_LABEL=""
+          if [ "$REMOVED_COUNT" -gt 5 ]; then
+            VERSION_LABEL="major-change"
+          elif [ -n "$ADDED" ] || [ "$REMOVED_COUNT" -gt 0 ]; then
+            VERSION_LABEL="minor-change"
+          elif [ -n "$MODIFIED" ]; then
+            VERSION_LABEL="patch-change"
+          fi
+
           # 构建评论内容
           echo "## 📋 模型 & 视图变更总结 / Change Summary" > /tmp/comment.md
+
+          if [ -n "$VERSION_LABEL" ]; then
+            echo "" >> /tmp/comment.md
+            echo "**版本影响 / Version Impact**: \`${VERSION_LABEL}\`" >> /tmp/comment.md
+          fi
 
           if [ -n "$ADDED" ]; then
             echo "" >> /tmp/comment.md
@@ -49,7 +73,7 @@ jobs:
 
           if [ -n "$REMOVED" ]; then
             echo "" >> /tmp/comment.md
-            echo "### 🗑️ 删除 / Removed" >> /tmp/comment.md
+            echo "### 🗑️ 删除 / Removed (${REMOVED_COUNT} 个文件)" >> /tmp/comment.md
             echo "$REMOVED" | while read -r f; do echo "- \`$f\`" >> /tmp/comment.md; done
           fi
 
@@ -71,4 +95,20 @@ jobs:
               --method POST \
               --field body=@/tmp/comment.md
             echo "Created new comment"
+          fi
+
+          # 打版本影响 label
+          if [ -n "$VERSION_LABEL" ]; then
+            # 先移除旧的版本 label
+            for OLD_LABEL in major-change minor-change patch-change; do
+              if [ "$OLD_LABEL" != "$VERSION_LABEL" ]; then
+                gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${OLD_LABEL}" \
+                  --method DELETE 2>/dev/null || true
+              fi
+            done
+            # 添加新 label
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" \
+              --method POST \
+              --jq '.[] | .name' \
+              -f "labels[]=${VERSION_LABEL}"
           fi
