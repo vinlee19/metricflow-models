@@ -1,0 +1,114 @@
+name: Validate Release
+
+on:
+  release:
+    types: [published, edited]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - name: Validate Release Format
+        id: validate
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          TARGET_BRANCH: ${{ github.event.release.target_commitish }}
+        run: |
+          WARNINGS=""
+
+          # 1. 校验 Tag 格式
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            WARNINGS="${WARNINGS}- ⚠️ **Tag 格式不规范**: \`$TAG_NAME\`，建议格式: \`v{MAJOR}.{MINOR}.{PATCH}\`\n"
+          fi
+
+          # 2. 校验 Release 标题
+          if [ -z "$RELEASE_NAME" ]; then
+            WARNINGS="${WARNINGS}- ⚠️ **Release 标题为空**，建议使用版本号作为标题，如 \`v0.1.0\`\n"
+          elif [[ ! "$RELEASE_NAME" =~ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            WARNINGS="${WARNINGS}- ⚠️ **Release 标题建议包含版本号**，当前: \`$RELEASE_NAME\`\n"
+          fi
+
+          # 3. 校验 Target 分支
+          if [ "$TARGET_BRANCH" != "master" ]; then
+            WARNINGS="${WARNINGS}- ⚠️ **建议从 master 分支发布**，当前: \`$TARGET_BRANCH\`\n"
+          fi
+
+          # 4. 校验 Release Body
+          if [ -z "$RELEASE_BODY" ]; then
+            WARNINGS="${WARNINGS}- ⚠️ **Release 描述为空**，建议填写变更内容\n"
+          fi
+
+          if [ -n "$WARNINGS" ]; then
+            EOF_MARKER=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+            echo "has_warnings=true" >> "$GITHUB_OUTPUT"
+            echo "warnings<<$EOF_MARKER" >> "$GITHUB_OUTPUT"
+            echo -e "$WARNINGS" >> "$GITHUB_OUTPUT"
+            echo "$EOF_MARKER" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_warnings=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Reminder Issue
+        if: steps.validate.outputs.has_warnings == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_AUTHOR: ${{ github.event.release.author.login }}
+          WARNINGS: ${{ steps.validate.outputs.warnings }}
+        run: |
+          gh issue create \
+            --title "⚠️ Release $TAG_NAME 格式提醒" \
+            --assignee "$RELEASE_AUTHOR" \
+            --body "$(cat <<EOF
+          ## Release 格式提醒
+
+          @$RELEASE_AUTHOR 你发布的 [$TAG_NAME]($RELEASE_URL) 存在以下格式建议：
+
+          $WARNINGS
+
+          ---
+
+          ### 📖 版本号规则
+
+          | 位 | 名称 | 含义 |
+          |---|------|------|
+          | 第一位 | MAJOR | 重大架构变更 / 不兼容变更 |
+          | 第二位 | MINOR | 新增模型 / 新增 View / 功能迭代 |
+          | 第三位 | PATCH | Bug 修复 / 小改动 / 配置调整 |
+
+          ### 📝 Release Notes 模板参考
+
+          **MINOR 版本（新增模型/View）：**
+          \`\`\`markdown
+          ## What's New
+          ### New Models
+          - models/xxx/xxx.yml - 模型描述
+          ### New Views
+          - views/xxx/xxx_view.yml - 视图描述
+          \`\`\`
+
+          **PATCH 版本（Bug 修复）：**
+          \`\`\`markdown
+          ## Bug Fixes
+          - 修复 xxx 问题
+          \`\`\`
+
+          **MAJOR 版本（重大变更）：**
+          \`\`\`markdown
+          ## Breaking Changes
+          - 变更描述
+          ## Migration Guide
+          - 迁移步骤说明
+          \`\`\`
+
+          > 详细规范请查看 [README](../blob/master/README.md)
+          >
+          > 如已修正，请关闭此 issue。
+          EOF
+          )"
