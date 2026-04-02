@@ -1,0 +1,8 @@
+view:
+  name: warranty_view
+  model: ref('warranty')
+  dimensions:
+    - organization_id
+    - claim_status
+  measures:
+    - total_claims

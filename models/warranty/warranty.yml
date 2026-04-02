@@ -1,0 +1,19 @@
+model:
+  name: warranty
+  title: "Warranty Claims"
+  sql_table: dwd_utc_00.dwd_product_as_warranty_claims_f_d
+  dimensions:
+    id:
+      hidden: true
+      sql: ${TABLE}.id
+      type: string
+    organization_id:
+      sql: ${TABLE}.organization_id
+      type: string
+    claim_status:
+      sql: ${TABLE}.claim_status
+      type: string
+  measures:
+    total_claims:
+      sql: ${TABLE}.id
+      type: count_distinct
