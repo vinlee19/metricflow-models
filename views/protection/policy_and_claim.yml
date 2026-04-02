@@ -1,0 +1,7 @@
+view:
+  name: policy_and_claim
+  title: policy_and_claim
+  models:
+    - join_path: dwd_product_pt_policy_and_claims_i_rt
+      includes:
+        - "*"

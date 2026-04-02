@@ -1,6 +1,6 @@
  model:
   name: apple_wallet                    # Required: unique model name
-  # title: ""                 # Optional: display title modify
+  title: "Apple Wallet Events"  # Optional: display title
   # description: ""           # Optional: business description
   sql_table: dwd_utc_00.dwd_flow_as_apple_wallet_events_v2_i_d
   # sql_alias: apple_wallet
