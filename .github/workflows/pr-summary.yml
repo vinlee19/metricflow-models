@@ -1,0 +1,74 @@
+name: PR Change Summary
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Summarize Changed Models & Views
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # 获取 PR 变更文件列表
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
+            --jq '.[] | select(.filename | test("^(models|views)/.*\\.yml$")) | "\(.status)\t\(.filename)"' \
+            > /tmp/changed_files.txt
+
+          # 如果没有模型/视图变更，跳过
+          if [ ! -s /tmp/changed_files.txt ]; then
+            echo "No model/view files changed, skipping."
+            exit 0
+          fi
+
+          # 分类文件
+          ADDED=$(grep "^added" /tmp/changed_files.txt | cut -f2 || true)
+          MODIFIED=$(grep "^modified" /tmp/changed_files.txt | cut -f2 || true)
+          REMOVED=$(grep "^removed" /tmp/changed_files.txt | cut -f2 || true)
+
+          # 构建评论内容
+          echo "## 📋 模型 & 视图变更总结 / Change Summary" > /tmp/comment.md
+
+          if [ -n "$ADDED" ]; then
+            echo "" >> /tmp/comment.md
+            echo "### ✅ 新增 / Added" >> /tmp/comment.md
+            echo "$ADDED" | while read -r f; do echo "- \`$f\`" >> /tmp/comment.md; done
+          fi
+
+          if [ -n "$MODIFIED" ]; then
+            echo "" >> /tmp/comment.md
+            echo "### ✏️ 修改 / Modified" >> /tmp/comment.md
+            echo "$MODIFIED" | while read -r f; do echo "- \`$f\`" >> /tmp/comment.md; done
+          fi
+
+          if [ -n "$REMOVED" ]; then
+            echo "" >> /tmp/comment.md
+            echo "### 🗑️ 删除 / Removed" >> /tmp/comment.md
+            echo "$REMOVED" | while read -r f; do echo "- \`$f\`" >> /tmp/comment.md; done
+          fi
+
+          echo "" >> /tmp/comment.md
+          echo "> 由 GitHub Actions 自动生成" >> /tmp/comment.md
+
+          # 查找是否已有评论（避免重复）
+          EXISTING_COMMENT_ID=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("模型 & 视图变更总结"))) | .id' \
+            | head -1)
+
+          if [ -n "$EXISTING_COMMENT_ID" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/issues/comments/${EXISTING_COMMENT_ID}" \
+              --method PATCH \
+              --field body=@/tmp/comment.md
+            echo "Updated existing comment #${EXISTING_COMMENT_ID}"
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              --method POST \
+              --field body=@/tmp/comment.md
+            echo "Created new comment"
+          fi
