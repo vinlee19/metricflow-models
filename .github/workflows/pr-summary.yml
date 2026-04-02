@@ -15,6 +15,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           # 获取 PR 变更文件列表
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
@@ -39,9 +41,6 @@ jobs:
           fi
 
           # 判断版本影响 label
-          # major-change: 删除 > 5 个
-          # minor-change: 有新增，或有删除 <= 5 个
-          # patch-change: 只有修改，无新增无删除
           VERSION_LABEL=""
           if [ "$REMOVED_COUNT" -gt 5 ]; then
             VERSION_LABEL="major-change"
@@ -77,6 +76,41 @@ jobs:
             echo "$REMOVED" | while read -r f; do echo "- \`$f\`" >> /tmp/comment.md; done
           fi
 
+          # staging → master 时给出发版建议
+          if [ "$PR_BASE_REF" = "master" ] && [ "$PR_HEAD_REF" = "staging" ]; then
+            # 获取最新 tag
+            LATEST_TAG=$(gh api "repos/${GITHUB_REPOSITORY}/tags" --jq '.[0].name // "v0.0.0"')
+            # 解析版本号
+            MAJOR=$(echo "$LATEST_TAG" | sed 's/^v//' | cut -d. -f1)
+            MINOR=$(echo "$LATEST_TAG" | sed 's/^v//' | cut -d. -f2)
+            PATCH=$(echo "$LATEST_TAG" | sed 's/^v//' | cut -d. -f3)
+
+            if [ "$VERSION_LABEL" = "major-change" ]; then
+              NEXT_VERSION="v$((MAJOR + 1)).0.0"
+            elif [ "$VERSION_LABEL" = "minor-change" ]; then
+              NEXT_VERSION="v${MAJOR}.$((MINOR + 1)).0"
+            else
+              NEXT_VERSION="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+            fi
+
+            echo "" >> /tmp/comment.md
+            echo "---" >> /tmp/comment.md
+            echo "" >> /tmp/comment.md
+            echo "### 🚀 发版建议 / Release Suggestion" >> /tmp/comment.md
+            echo "" >> /tmp/comment.md
+            echo "当前最新 Tag: \`${LATEST_TAG}\`" >> /tmp/comment.md
+            echo "" >> /tmp/comment.md
+            echo "**建议下一个版本号: \`${NEXT_VERSION}\`**" >> /tmp/comment.md
+            echo "" >> /tmp/comment.md
+            if [ "$VERSION_LABEL" = "major-change" ]; then
+              echo "> ⚠️ 本次 PR 包含大量删除（${REMOVED_COUNT} 个文件），建议发布 **MAJOR** 版本" >> /tmp/comment.md
+            elif [ "$VERSION_LABEL" = "minor-change" ]; then
+              echo "> 本次 PR 包含新增模型/视图或少量删除，建议发布 **MINOR** 版本" >> /tmp/comment.md
+            else
+              echo "> 本次 PR 仅包含修改，建议发布 **PATCH** 版本" >> /tmp/comment.md
+            fi
+          fi
+
           echo "" >> /tmp/comment.md
           echo "> 由 GitHub Actions 自动生成" >> /tmp/comment.md
 
@@ -99,14 +133,12 @@ jobs:
 
           # 打版本影响 label
           if [ -n "$VERSION_LABEL" ]; then
-            # 先移除旧的版本 label
             for OLD_LABEL in major-change minor-change patch-change; do
               if [ "$OLD_LABEL" != "$VERSION_LABEL" ]; then
                 gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${OLD_LABEL}" \
                   --method DELETE 2>/dev/null || true
               fi
             done
-            # 添加新 label
             gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" \
               --method POST \
               --jq '.[] | .name' \
