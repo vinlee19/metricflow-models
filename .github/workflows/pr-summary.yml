@@ -114,6 +114,21 @@ jobs:
             else
               echo "> 本次 PR 仅包含修改，建议发布 **PATCH** 版本" >> /tmp/comment.md
             fi
+            echo "" >> /tmp/comment.md
+            echo "### 📖 发版规范 / Release Guide" >> /tmp/comment.md
+            echo "" >> /tmp/comment.md
+            echo "合并本 PR 后，请前往 [Releases](https://github.com/${GITHUB_REPOSITORY}/releases/new) 创建新 Release：" >> /tmp/comment.md
+            echo "" >> /tmp/comment.md
+            echo "1. **Tag**: \`${NEXT_VERSION}\`（格式: \`v{MAJOR}.{MINOR}.{PATCH}\`）" >> /tmp/comment.md
+            echo "2. **Target**: \`master\` 分支" >> /tmp/comment.md
+            echo "3. **Title**: \`${NEXT_VERSION}\`" >> /tmp/comment.md
+            echo "4. **描述**: 点击 \"Generate release notes\" 自动生成，或参考以下模板：" >> /tmp/comment.md
+            echo "" >> /tmp/comment.md
+            echo "| 版本类型 | 模板 |" >> /tmp/comment.md
+            echo "|---------|------|" >> /tmp/comment.md
+            echo "| MINOR | \`## What's New\` → \`### New Models\` / \`### New Views\` |" >> /tmp/comment.md
+            echo "| PATCH | \`## Bug Fixes\` |" >> /tmp/comment.md
+            echo "| MAJOR | \`## Breaking Changes\` → \`## Migration Guide\` |" >> /tmp/comment.md
           fi
 
           echo "" >> /tmp/comment.md
