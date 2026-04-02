@@ -1,0 +1,13 @@
+model:
+  - changed-files:
+      - any-glob-to-any-file: 'models/**/*.yml'
+
+view:
+  - changed-files:
+      - any-glob-to-any-file: 'views/**/*.yml'
+
+bugfix:
+  - head-branch: ['^hotfix-', '^fix-']
+
+breaking:
+  - head-branch: ['^breaking-']
