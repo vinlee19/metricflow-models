@@ -108,11 +108,14 @@ jobs:
             echo "**建议下一个版本号: \`${NEXT_VERSION}\`**" >> /tmp/comment.md
             echo "" >> /tmp/comment.md
             if [ "$VERSION_LABEL" = "major-change" ]; then
-              echo "> ⚠️ 本次 PR 包含大量删除（${REMOVED_COUNT} 个文件），建议发布 **MAJOR** 版本" >> /tmp/comment.md
+              echo "> ⚠️ 本次变更删除了大量模型/视图（${REMOVED_COUNT} 个文件），属于不兼容变更" >> /tmp/comment.md
+              echo "> 建议递增**第一位** MAJOR 版本号（如 v1.0.0 → v2.0.0）" >> /tmp/comment.md
             elif [ "$VERSION_LABEL" = "minor-change" ]; then
-              echo "> 本次 PR 包含新增模型/视图或少量删除，建议发布 **MINOR** 版本" >> /tmp/comment.md
+              echo "> 本次变更包含新模型或视图的增减" >> /tmp/comment.md
+              echo "> 建议递增**第二位** MINOR 版本号（如 v0.1.0 → v0.2.0）" >> /tmp/comment.md
             else
-              echo "> 本次 PR 仅包含修改，建议发布 **PATCH** 版本" >> /tmp/comment.md
+              echo "> 本次变更仅涉及现有模型的小幅调整" >> /tmp/comment.md
+              echo "> 建议递增**第三位** PATCH 版本号（如 v0.1.0 → v0.1.1）" >> /tmp/comment.md
             fi
             echo "" >> /tmp/comment.md
             echo "### 📖 发版规范 / Release Guide" >> /tmp/comment.md
