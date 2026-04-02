@@ -1,0 +1,5 @@
+view:
+  name: apple_wallet_view                     # Required: unique view name
+  models:                       # Required: exactly one model reference
+    - join_path: apple_wallet           # Required: root model id only (no dot)
+  sql_always_where: (${scenario} IN ('email','sms','btp','btp_tracking','shopify_thankyou_page'))

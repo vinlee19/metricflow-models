@@ -1,0 +1,82 @@
+ model:
+  name: apple_wallet                    # Required: unique model name
+  # title: ""                 # Optional: display title modify
+  # description: ""           # Optional: business description
+  sql_table: dwd_utc_00.dwd_flow_as_apple_wallet_events_v2_i_d
+  # sql_alias: apple_wallet
+  dimensions:
+    id:
+      hidden: true
+      sql: ${TABLE}.id
+      type: string
+      primary_key: true
+    customer_external_id:
+      hidden: true
+      sql: ${TABLE}.customer_external_id
+      type: string
+    order_id:
+      hidden: true
+      sql: ${TABLE}.order_id
+      type: string
+    event:
+      sql: ${TABLE}.event
+      type: string
+    scenario:
+      sql: ${TABLE}.scenario
+      type: string
+    organization_id:
+      sql: ${TABLE}.organization_id
+      type: string
+    order_created_at:
+      sql: ${TABLE}.order_created_at
+      type: date
+      granularity_options:
+      - day
+      - week
+      - month
+      - quarter
+      - year
+    channel:
+      sql: |-
+        CASE WHEN ${scenario} = 'email' THEN 'Tracking email notifications'
+                      WHEN ${scenario} = 'sms' THEN 'Tracking SMS notifications'
+                      WHEN ${scenario} IN ('btp','btp_tracking') THEN 'Tracking pages'
+                      WHEN ${scenario} = 'shopify_thankyou_page' THEN 'Shopify order status page'
+                      END
+      type: string
+  measures:
+    imported_order:
+      type: count_distinct
+      sql: ${order_id}
+      title: '# of orders'
+    imported_customer:
+      type: count_distinct
+      sql: ${customer_external_id}
+      title: '# of shoppers'
+    impr:
+      type: count_distinct
+      sql: ${TABLE}.id
+      filters: 
+        - ${event} = 'get_apple_wallet_order_download_link'
+      hidden: true
+    click:
+      type: count_distinct
+      sql: ${TABLE}.id
+      filters: 
+        - ${event} = 'download_apple_wallet_order'
+      hidden: true
+    ctr:
+      type: number
+      sql: IF(IF(${impr} = 0, 0, ${click} / ${impr} ) > 1,1, IF(${impr} = 0, 0, ${click}
+        / ${impr} ))
+      value_format: 0.00%      
+
+  parameters: 
+    organization_timezone:
+      required: true
+      default_value: UTC
+  sets:
+    date_range:
+      fields: [
+        order_created_at
+      ]
