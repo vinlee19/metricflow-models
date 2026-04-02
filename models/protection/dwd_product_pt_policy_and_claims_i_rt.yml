@@ -1,0 +1,522 @@
+model:
+  name: dwd_product_pt_policy_and_claims_i_rt
+  description: Converted from LookML view dwd_product_pt_policy_and_claims_i_rt
+  sql: |
+    SELECT
+      *
+    FROM (
+      SELECT
+        *
+        {% if ('total_orders' in _in_select or 'covered_orders_rate' in _in_select) and 'ordered' in _in_select %}
+        EXCEPT(created_at, protection_provider, po_first_tracking_courier, organization_id),
+        IF(id = '', order_date, created_at) AS created_at,
+        IF(
+          id = '',
+          arrayElement(splitByChar(',', {{ parameter.protection_provider }}), -1),
+          protection_provider
+        ) AS protection_provider,
+        IF(
+          id = '',
+          arrayElement(splitByChar(',', {{ parameter.po_first_tracking_courier }}), -1),
+          po_first_tracking_courier
+        ) AS po_first_tracking_courier,
+        IF(
+          id = '',
+          arrayElement(splitByChar(',', {{ parameter.organization_id }}), -1),
+          organization_id
+        ) AS organization_id
+        {% endif %}
+      FROM (
+        SELECT
+          * EXCEPT(cl_claimed_at, created_at),
+          toTimeZone(cl_claimed_at, {{ parameter.organization_timezone }}) AS cl_claimed_at,
+          toTimeZone(created_at, {{ parameter.organization_timezone }}) AS created_at
+        FROM dwd_utc_00.dwd_product_pt_policy_and_claims_v2_i_rt FINAL
+        WHERE
+          {% condition ordered %}
+            toDate(toTimeZone(created_at, {{ parameter.organization_timezone }}))
+          {% endcondition %}
+          AND (has(insurance_types, 'shipping_protection') OR length(insurance_types) = 0)
+          AND {% condition organization_id %} organization_id {% endcondition %}
+      ) a
+      {% if 'total_orders' in _in_select or 'covered_orders_rate' in _in_select %}
+      FULL JOIN (
+        SELECT
+          toDate(toTimeZone(stats_hour, {{ parameter.organization_timezone }})) AS order_date,
+          sum(order_count) AS order_count
+        FROM hds_utc_00.hds_integration_pt_orders_3y_h
+        WHERE
+          {% condition ordered %}
+            toDate(toTimeZone(stats_hour, {{ parameter.organization_timezone }}))
+          {% endcondition %}
+          AND toStartOfHour(processing_hour) = (
+            SELECT MAX(toStartOfHour(processing_hour)) FROM hds_utc_00.hds_integration_pt_orders_3y_h
+          )
+          AND {% condition organization_id %} organization_id {% endcondition %}
+        GROUP BY toDate(toTimeZone(stats_hour, {{ parameter.organization_timezone }}))
+      ) b ON toDate(toTimeZone(a.created_at, {{ parameter.organization_timezone }})) = b.order_date
+      {% endif %}
+    ) a
+    {% if 'protection_provider' in _in_filter %}
+    CROSS JOIN (
+      SELECT
+        COUNT(*) AS total
+      FROM dwd_utc_00.dwd_product_pt_policy_and_claims_v2_i_rt FINAL
+      WHERE
+        {% condition ordered %}
+          toDate(toTimeZone(created_at, {{ parameter.organization_timezone }}))
+        {% endcondition %}
+        AND (has(insurance_types, 'shipping_protection') OR length(insurance_types) = 0)
+        AND {% condition po_first_tracking_courier %} po_first_tracking_courier {% endcondition %}
+        AND {% condition organization_id %} organization_id {% endcondition %}
+    ) b
+    {% endif %}
+
+  parameters:
+    organization_timezone:
+      required: false
+      description: Organization timezone
+    protection_provider:
+      required: false
+      description: Provider filter raw value
+    po_first_tracking_courier:
+      required: false
+      description: Carrier filter raw value
+    organization_id:
+      required: false
+      description: Organization filter raw value
+
+  dimensions:
+    id:
+      primary_key: true
+      type: string
+      sql: ${TABLE}.id
+
+    amount:
+      type: number
+      sql: ${TABLE}.amount
+
+    business_model:
+      type: string
+      sql: ${TABLE}.business_model
+
+    cl_claim_id:
+      type: string
+      sql: ${TABLE}.cl_claim_id
+      title: Claim ID
+
+    cl_claim_items:
+      type: string
+      sql: ${TABLE}.cl_claim_items
+      title: Claim Items
+
+    cl_claim_status:
+      type: string
+      sql: |
+        CASE
+          WHEN ${TABLE}.cl_claim_status = 'merchant_precheck' THEN 'Unsubmitted'
+          WHEN ${TABLE}.cl_claim_status = 'claim_received' THEN 'Submitted'
+          WHEN ${TABLE}.cl_claim_status = 'waiting_on_documents' THEN 'Awaiting documents'
+          WHEN ${TABLE}.cl_claim_status = 'under_review' THEN 'Under review'
+          WHEN ${TABLE}.cl_claim_status = 'reviewed_completed' THEN 'Completed'
+          WHEN ${TABLE}.cl_claim_status = 'claim_approved' THEN 'Approved'
+          WHEN ${TABLE}.cl_claim_status = 'claim_denied' THEN 'Denied'
+          WHEN ${TABLE}.cl_claim_status = 'paid_payment_info_requested' THEN 'Payment info requested'
+          WHEN ${TABLE}.cl_claim_status = 'claim_paid' THEN 'Paid'
+          WHEN ${TABLE}.cl_claim_status = 'claim_closed' THEN 'Closed'
+          WHEN ${TABLE}.cl_claim_status = 'disputed' THEN 'Disputed'
+          WHEN ${TABLE}.cl_claim_status = 'carrier_disputed_1st' THEN '1st Carrier Disputed'
+          WHEN ${TABLE}.cl_claim_status = 'carrier_disputed_2nd' THEN '2nd Carrier Disputed'
+          WHEN ${TABLE}.cl_claim_status = 'carrier_disputed_3rd' THEN '3rd Carrier Disputed'
+          ELSE 'Unknown'
+        END
+      title: Claim status
+
+    cl_claimed_at:
+      type: string
+      sql: ${TABLE}.cl_claimed_at
+      title: Claim Filed At
+
+    cl_updated_at:
+      type: string
+      sql: ${TABLE}.cl_updated_at
+
+    cl_customer_resolution_method:
+      type: string
+      sql: ${TABLE}.cl_customer_resolution_method
+      title: Customer resolution method
+
+    cl_external_claim_id:
+      type: string
+      sql: ${TABLE}.cl_external_claim_id
+      title: External Claim ID
+
+    cl_issue_commodity:
+      type: string
+      sql: ${TABLE}.cl_issue_commodity
+      title: Issue commodity
+
+    cl_issue_type:
+      type: string
+      sql: |
+        CASE ${TABLE}.cl_issue_type
+          WHEN 'LostInTransit' THEN 'Lost in transit'
+          ELSE ${TABLE}.cl_issue_type
+        END
+      title: Issue type
+
+    cl_merchant_resolution_method:
+      type: string
+      sql: |
+        CASE ${TABLE}.cl_merchant_resolution_method
+          WHEN 'reship_the_same_items' THEN 'Replace with the same item(s)'
+          WHEN 'refund_to_store_credit' THEN 'Refund to store credit'
+          WHEN 'refund_to_original_payment_method' THEN 'Refund to original payment method'
+          WHEN 'refund_to_credit' THEN 'Refund to credit'
+          WHEN 'other' THEN 'Other'
+          ELSE ${TABLE}.cl_merchant_resolution_method
+        END
+      title: Resolve method
+
+    cl_paid_at:
+      type: string
+      sql: ${TABLE}.cl_paid_at
+      title: Claim paid at
+
+    cl_payment_amount:
+      type: number
+      sql: ${TABLE}.cl_payment_amount
+      title: Claim payment amount
+
+    cl_resolved_amount:
+      type: number
+      sql: ${TABLE}.cl_resolved_amount
+      title: Claim resolved amount
+
+    cl_protection_platform:
+      type: string
+      sql: ${TABLE}.cl_protection_platform
+      title: Claim protection platform
+
+    cl_resolve_status:
+      type: string
+      sql: |
+        CASE
+          WHEN ${TABLE}.cl_resolve_status = 'pending' THEN 'Unsubmitted'
+          WHEN ${TABLE}.cl_resolve_status = 'in_progress' THEN 'In progress'
+          WHEN ${TABLE}.cl_resolve_status = 'un_resolved' THEN 'To be resolved'
+          WHEN ${TABLE}.cl_resolve_status = 'resolved' THEN 'Resolved'
+          WHEN ${TABLE}.cl_resolve_status = 'not_resolved' THEN 'Denied'
+          WHEN ${TABLE}.cl_resolve_status = 'waiting_on_documents' THEN 'Awaiting documents'
+          WHEN ${TABLE}.cl_resolve_status = 'disputed' THEN 'Disputed'
+          WHEN ${TABLE}.cl_resolve_status = 'approved' THEN 'Approved'
+          ELSE 'Unknown'
+        END
+      title: Resolve status
+
+    cl_shipping_amount:
+      type: string
+      sql: ${TABLE}.cl_shipping_amount
+      title: Claim shipping amount
+
+    cl_tag_ids:
+      type: string
+      sql: ${TABLE}.cl_tag_ids
+      title: Claim Tag IDs
+
+    cl_value_being_claimed:
+      type: number
+      sql: ${TABLE}.cl_value_being_claimed
+      title: Value being claimed
+
+    created_at:
+      type: string
+      sql: ${TABLE}.created_at
+      title: Created
+
+    currency:
+      type: string
+      sql: ${TABLE}.currency
+
+    effective_time:
+      type: string
+      sql: ${TABLE}.effective_time
+
+    expiration_time:
+      type: string
+      sql: ${TABLE}.expiration_time
+
+    external_policy_number:
+      type: string
+      sql: ${TABLE}.external_policy_number
+
+    insurant_email:
+      type: string
+      sql: ${TABLE}.insurant_email
+      title: Customer
+
+    insurant_name:
+      type: string
+      sql: ${TABLE}.insurant_name
+
+    insurant_phone:
+      type: string
+      sql: ${TABLE}.insurant_phone
+
+    merchant_order_number:
+      type: string
+      sql: ${TABLE}.merchant_order_number
+
+    merchant_uniq_order_id:
+      type: string
+      sql: ${TABLE}.merchant_uniq_order_id
+
+    organization_id:
+      type: string
+      sql: ${TABLE}.organization_id
+      title: Organization Name
+
+    organization_name:
+      type: string
+      sql: ${TABLE}.organization_id
+      title: Organization
+
+    po_first_tracking_courier:
+      type: string
+      sql: ${TABLE}.po_first_tracking_courier
+      title: Carrier
+
+    po_first_tracking_number:
+      type: string
+      sql: ${TABLE}.po_first_tracking_number
+
+    po_first_tracking_slug:
+      type: string
+      sql: ${TABLE}.po_first_tracking_slug
+
+    po_order_time:
+      type: string
+      sql: ${TABLE}.po_order_time
+
+    po_ship_date:
+      type: string
+      sql: ${TABLE}.po_ship_date
+
+    po_shipping_address_1:
+      type: string
+      sql: ${TABLE}.po_shipping_address_1
+
+    po_shipping_address_2:
+      type: string
+      sql: ${TABLE}.po_shipping_address_2
+
+    po_shipping_address_3:
+      type: string
+      sql: ${TABLE}.po_shipping_address_3
+
+    po_shipping_city:
+      type: string
+      sql: ${TABLE}.po_shipping_city
+
+    po_shipping_country:
+      type: string
+      sql: ${TABLE}.po_shipping_country
+
+    po_shipping_email:
+      type: string
+      sql: ${TABLE}.po_shipping_email
+
+    po_shipping_first_name:
+      type: string
+      sql: ${TABLE}.po_shipping_first_name
+
+    po_shipping_last_name:
+      type: string
+      sql: ${TABLE}.po_shipping_last_name
+
+    po_shipping_phone:
+      type: string
+      sql: ${TABLE}.po_shipping_phone
+
+    po_shipping_state:
+      type: string
+      sql: ${TABLE}.po_shipping_state
+
+    po_shipping_zip:
+      type: string
+      sql: ${TABLE}.po_shipping_zip
+      title: ZIP Code
+
+    po_trackings:
+      type: string
+      sql: ${TABLE}.po_trackings
+
+    protection_provider:
+      type: string
+      sql: |
+        CASE ${TABLE}.protection_provider
+          WHEN 'standard' THEN 'Standard'
+          WHEN 'premium' THEN 'Premium'
+          WHEN 'aftership' THEN 'AfterShip'
+          ELSE ${TABLE}.protection_provider
+        END
+      title: Provider
+
+    sandbox:
+      type: number
+      sql: ${TABLE}.sandbox
+
+    status:
+      type: string
+      sql: |
+        CASE ${TABLE}.status
+          WHEN 'claimed' THEN 'Claimed'
+          WHEN 'expired' THEN 'Expired'
+          WHEN 'activated' THEN 'Activated'
+          WHEN 'void' THEN 'Voided'
+          WHEN 'invalid' THEN 'Invalid'
+          WHEN 'inactive' THEN 'Inactive'
+          ELSE ${TABLE}.status
+        END
+      title: Current status
+
+    tag_ids:
+      type: string
+      sql: ${TABLE}.tag_ids
+
+    updated_at:
+      type: string
+      sql: ${TABLE}.updated_at
+
+    ordered:
+      type: datetime
+      sql: ${created_at}
+      title: Order
+      granularity_options:
+        - day
+        - week
+        - month
+
+    claim_filed:
+      type: datetime
+      sql: ${cl_claimed_at}
+      title: File
+      granularity_options:
+        - day
+        - week
+        - month
+        
+    order_date:
+      type: number
+      sql: toUnixTimestamp(toString(${TABLE}.order_date)) * 1000
+      hidden: true
+
+    order_count:
+      type: number
+      sql: ${TABLE}.order_count
+      hidden: true
+
+    exclude_provider_filter_total:
+      type: number
+      sql: ${TABLE}.total
+      hidden: true
+
+  measures:
+    count:
+      type: count
+      drill_fields:
+        - id
+        - po_shipping_first_name
+        - po_shipping_last_name
+        - insurant_name
+
+    total_orders:
+      type: number
+      sql: SUM(DISTINCT ${order_date} + ${order_count}) - SUM(DISTINCT ${order_date})
+      title: Total orders
+      value_format: '#,##0'
+
+    covered_orders:
+      type: count_distinct
+      sql: ${id}
+      filters:
+        - sql: ${id} IS NOT NULL AND ${id} <> ''
+      title: Covered orders
+      value_format: '#,##0'
+
+    covered_orders_rate:
+      type: number
+      sql: IF(${total_orders} = 0, 1, ${covered_orders} / ${total_orders})
+      title: '% of total orders'
+      value_format: '0.00%'
+      drill_fields:
+        - cl_claim_id
+
+    coverage_rate_of_provider:
+      type: number
+      sql: |
+        {% if 'protection_provider' in _in_filter %}
+          ${covered_orders} / MIN(${exclude_provider_filter_total})
+        {% else %}
+          MIN(1)
+        {% endif %}
+      title: '% of covered orders'
+      value_format: '0.00%'
+
+    claim_submit_amount:
+      type: sum
+      sql: ${cl_value_being_claimed}
+      title: Claim amount
+      value_format: '$#,##0.00'
+
+    claim_submit_count:
+      type: count_distinct
+      sql: ${cl_claim_id}
+      filters:
+        - sql: ${cl_claim_id} IS NOT NULL AND ${cl_claim_id} <> ''
+      title: Filed claims
+      value_format: '#,##0'
+
+    claim_submit_rate:
+      type: percent_of_total
+      sql: ${claim_submit_count}
+      title: '% of filed claims'
+      value_format: '0.00%'
+
+    policy_claim_submit_rate:
+      type: number
+      sql: ${claim_submit_count} / ${covered_orders}
+      title: Claim rate
+      value_format: '0.00%'
+
+    claim_paid_amount:
+      type: sum
+      sql: ${cl_value_being_claimed}
+      filters:
+        - sql: ${cl_claim_status} = 'Paid'
+      title: Paid amount
+      value_format: '$#,##0.00'
+
+    claim_paid_count:
+      type: count_distinct
+      sql: ${cl_claim_id}
+      filters:
+        - sql: ${cl_claim_status} = 'Paid'
+      title: Paid claims
+      value_format: '#,##0'
+
+    claim_resolved_amount:
+      type: sum
+      sql: ${cl_resolved_amount}
+      filters:
+        - sql: ${cl_resolve_status} = 'Resolved'
+      title: Resolved amount
+      value_format: '$#,##0.00'
+
+    claim_resolved_count:
+      type: count_distinct
+      sql: ${cl_claim_id}
+      filters:
+        - sql: ${cl_resolve_status} = 'Resolved'
+      title: Resolved claims
+      value_format: '#,##0'
