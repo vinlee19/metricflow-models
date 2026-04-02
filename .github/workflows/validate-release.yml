@@ -23,38 +23,38 @@ jobs:
           RELEASE_BODY: ${{ github.event.release.body }}
           TARGET_BRANCH: ${{ github.event.release.target_commitish }}
         run: |
-          WARNINGS=""
+          # 直接写 warnings 到文件，避免变量中多行转义问题
+          HAS_WARNINGS=false
 
           # 1. 校验 Tag 格式
           if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            WARNINGS="${WARNINGS}- ⚠️ **Tag 格式不规范**: \`${TAG_NAME}\`，建议格式: \`v{MAJOR}.{MINOR}.{PATCH}\`\n"
+            echo "- ⚠️ **Tag 格式不规范**: \`${TAG_NAME}\`，建议格式: \`v{MAJOR}.{MINOR}.{PATCH}\`" >> /tmp/warnings.txt
+            HAS_WARNINGS=true
           fi
 
           # 2. 校验 Release 标题
           if [ -z "$RELEASE_NAME" ]; then
-            WARNINGS="${WARNINGS}- ⚠️ **Release 标题为空**，建议使用版本号作为标题，如 \`v0.1.0\`\n"
+            echo "- ⚠️ **Release 标题为空**，建议使用版本号作为标题，如 \`v0.1.0\`" >> /tmp/warnings.txt
+            HAS_WARNINGS=true
           elif [[ ! "$RELEASE_NAME" =~ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            WARNINGS="${WARNINGS}- ⚠️ **Release 标题建议包含版本号**，当前: \`${RELEASE_NAME}\`\n"
+            echo "- ⚠️ **Release 标题建议包含版本号**，当前: \`${RELEASE_NAME}\`" >> /tmp/warnings.txt
+            HAS_WARNINGS=true
           fi
 
           # 3. 校验 Target 分支（动态获取默认分支）
           DEFAULT_BRANCH=$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.default_branch')
           if [ "$TARGET_BRANCH" != "$DEFAULT_BRANCH" ]; then
-            WARNINGS="${WARNINGS}- ⚠️ **建议从 ${DEFAULT_BRANCH} 分支发布**，当前: \`${TARGET_BRANCH}\`\n"
+            echo "- ⚠️ **建议从 ${DEFAULT_BRANCH} 分支发布**，当前: \`${TARGET_BRANCH}\`" >> /tmp/warnings.txt
+            HAS_WARNINGS=true
           fi
 
           # 4. 校验 Release Body
           if [ -z "$RELEASE_BODY" ]; then
-            WARNINGS="${WARNINGS}- ⚠️ **Release 描述为空**，建议填写变更内容\n"
+            echo "- ⚠️ **Release 描述为空**，建议填写变更内容" >> /tmp/warnings.txt
+            HAS_WARNINGS=true
           fi
 
-          if [ -n "$WARNINGS" ]; then
-            echo "has_warnings=true" >> "$GITHUB_OUTPUT"
-            # 写入 warnings 到文件，避免多行输出问题
-            echo -e "$WARNINGS" > /tmp/warnings.txt
-          else
-            echo "has_warnings=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "has_warnings=${HAS_WARNINGS}" >> "$GITHUB_OUTPUT"
 
       - name: Create Reminder Issue
         if: steps.validate.outputs.has_warnings == 'true'
@@ -64,15 +64,17 @@ jobs:
           RELEASE_URL: ${{ github.event.release.html_url }}
           RELEASE_AUTHOR: ${{ github.event.release.author.login }}
         run: |
-          WARNINGS=$(cat /tmp/warnings.txt)
-
-          # 写 issue body 到文件
-          cat > /tmp/issue_body.md << 'TEMPLATE_END'
+          # 拼接 issue body 文件：头部 + warnings + 尾部
+          cat > /tmp/issue_body.md << 'HEAD_END'
           ## Release 格式提醒
 
           发布的 Release 存在以下格式建议：
 
-          WARNINGS_PLACEHOLDER
+          HEAD_END
+
+          cat /tmp/warnings.txt >> /tmp/issue_body.md
+
+          cat >> /tmp/issue_body.md << 'TAIL_END'
 
           ---
 
@@ -110,10 +112,9 @@ jobs:
           ```
 
           > 如已修正，请关闭此 issue。
-          TEMPLATE_END
+          TAIL_END
 
-          # 替换占位符为实际 warnings，并去除行首缩进
-          sed -i "s|WARNINGS_PLACEHOLDER|${WARNINGS}|" /tmp/issue_body.md
+          # 去除 heredoc 缩进
           sed -i 's/^          //' /tmp/issue_body.md
 
           gh issue create \
