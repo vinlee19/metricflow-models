@@ -2,20 +2,17 @@ changelog:
   categories:
     - title: "Breaking Changes"
       labels:
-        - breaking
+        - major-change
     - title: "New Models"
       labels:
         - model
     - title: "New Views"
       labels:
         - view
-    - title: "Field & SQL Changes"
+    - title: "Changes"
       labels:
-        - field-change
-        - sql-logic
-    - title: "Bug Fixes"
-      labels:
-        - bugfix
+        - minor-change
+        - patch-change
     - title: "Other"
       labels:
         - "*"
