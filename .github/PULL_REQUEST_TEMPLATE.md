@@ -6,13 +6,14 @@
 
 ## 变更类型 / Change Type
 
-- [ ] 新增模型 (New Model) → label: `model`
-- [ ] 新增视图 (New View) → label: `view`
-- [ ] 模型字段调整：dimension / measure / parameter (Field Change) → label: `field-change`
-- [ ] SQL 逻辑调整 (SQL Logic Change) → label: `sql-logic`
-- [ ] Bug 修复 (Bug Fix) → label: `bugfix`
-- [ ] 不兼容变更 (Breaking Change) → label: `breaking`
+- [ ] 新增模型 (New Model)
+- [ ] 新增视图 (New View)
+- [ ] 模型字段调整 (Field Change)
+- [ ] SQL 逻辑调整 (SQL Logic Change)
+- [ ] Bug 修复 (Bug Fix)
 - [ ] 其他 (Other)
+
+> Label（`model`、`view`、`major-change`、`minor-change`、`patch-change`）由流水线自动打标，无需手动添加。
 
 ## 涉及文件 / Affected Files
 
@@ -49,9 +50,9 @@
 
 ### PR Label
 
-请为 PR 添加对应的 label，release 时会自动生成分类 changelog：
+以下 label 由流水线自动打标：
 
-`model` · `view` · `field-change` · `sql-logic` · `bugfix` · `breaking`
+`model` · `view` · `major-change` · `minor-change` · `patch-change`
 
 ### Commit 前缀
 
