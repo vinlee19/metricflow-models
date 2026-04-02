@@ -7,6 +7,7 @@ on:
 jobs:
   summary:
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       contents: read
       pull-requests: write
@@ -107,12 +108,30 @@ jobs:
             echo "**建议下一个版本号: \`${NEXT_VERSION}\`**" >> /tmp/comment.md
             echo "" >> /tmp/comment.md
             if [ "$VERSION_LABEL" = "major-change" ]; then
-              echo "> ⚠️ 本次 PR 包含大量删除（${REMOVED_COUNT} 个文件），建议发布 **MAJOR** 版本" >> /tmp/comment.md
+              echo "> ⚠️ 本次变更删除了大量模型/视图（${REMOVED_COUNT} 个文件），可能影响下游依赖方的查询" >> /tmp/comment.md
+              echo "> 建议递增**第一位** MAJOR 版本号（如 v1.0.0 → v2.0.0）" >> /tmp/comment.md
             elif [ "$VERSION_LABEL" = "minor-change" ]; then
-              echo "> 本次 PR 包含新增模型/视图或少量删除，建议发布 **MINOR** 版本" >> /tmp/comment.md
+              echo "> 本次变更包含新模型或视图的增减" >> /tmp/comment.md
+              echo "> 建议递增**第二位** MINOR 版本号（如 v0.1.0 → v0.2.0）" >> /tmp/comment.md
             else
-              echo "> 本次 PR 仅包含修改，建议发布 **PATCH** 版本" >> /tmp/comment.md
+              echo "> 本次变更仅涉及现有模型的小幅调整" >> /tmp/comment.md
+              echo "> 建议递增**第三位** PATCH 版本号（如 v0.1.0 → v0.1.1）" >> /tmp/comment.md
             fi
+            echo "" >> /tmp/comment.md
+            echo "### 📖 发版规范 / Release Guide" >> /tmp/comment.md
+            echo "" >> /tmp/comment.md
+            echo "合并本 PR 后，请前往 [Releases](https://github.com/${GITHUB_REPOSITORY}/releases/new) 创建新 Release：" >> /tmp/comment.md
+            echo "" >> /tmp/comment.md
+            echo "1. **Tag**: \`${NEXT_VERSION}\`（格式: \`v{MAJOR}.{MINOR}.{PATCH}\`）" >> /tmp/comment.md
+            echo "2. **Target**: \`master\` 分支" >> /tmp/comment.md
+            echo "3. **Title**: \`${NEXT_VERSION}\`" >> /tmp/comment.md
+            echo "4. **描述**: 点击 \"Generate release notes\" 自动生成，或参考以下模板：" >> /tmp/comment.md
+            echo "" >> /tmp/comment.md
+            echo "| 版本类型 | 模板 |" >> /tmp/comment.md
+            echo "|---------|------|" >> /tmp/comment.md
+            echo "| MINOR | \`## What's New\` → \`### New Models\` / \`### New Views\` |" >> /tmp/comment.md
+            echo "| PATCH | \`## Bug Fixes\` |" >> /tmp/comment.md
+            echo "| MAJOR | \`## Breaking Changes\` → \`## Migration Guide\` |" >> /tmp/comment.md
           fi
 
           echo "" >> /tmp/comment.md
@@ -135,16 +154,30 @@ jobs:
             echo "Created new comment"
           fi
 
-          # 打版本影响 label
+          # 打版本影响 label（容错：label 不存在则先创建，所有操作失败不阻塞）
           if [ -n "$VERSION_LABEL" ]; then
+            # 确保 label 存在，不存在则创建
+            LABEL_COLORS="major-change:d73a4a minor-change:fbca04 patch-change:0e8a16"
+            for PAIR in $LABEL_COLORS; do
+              L_NAME="${PAIR%%:*}"
+              L_COLOR="${PAIR##*:}"
+              gh api "repos/${GITHUB_REPOSITORY}/labels" \
+                --method POST \
+                -f name="$L_NAME" \
+                -f color="$L_COLOR" 2>/dev/null || true
+            done
+
+            # 移除旧的版本 label
             for OLD_LABEL in major-change minor-change patch-change; do
               if [ "$OLD_LABEL" != "$VERSION_LABEL" ]; then
                 gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${OLD_LABEL}" \
                   --method DELETE 2>/dev/null || true
               fi
             done
+
+            # 添加新 label
             gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" \
               --method POST \
               --jq '.[] | .name' \
-              -f "labels[]=${VERSION_LABEL}"
+              -f "labels[]=${VERSION_LABEL}" 2>/dev/null || true
           fi
