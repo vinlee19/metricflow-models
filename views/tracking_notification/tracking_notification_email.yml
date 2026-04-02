@@ -1,0 +1,8 @@
+view:
+  name: tracking_notification_email
+  model: ref('email_base')
+  dimensions:
+    - organization_id
+    - email_status
+  measures:
+    - total_emails

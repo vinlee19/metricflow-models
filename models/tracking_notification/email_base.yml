@@ -1,0 +1,19 @@
+model:
+  name: email_base
+  title: "Tracking Notification Email"
+  sql_table: dwd_utc_00.dwd_flow_as_tracking_notification_email_f_d
+  dimensions:
+    id:
+      hidden: true
+      sql: ${TABLE}.id
+      type: string
+    organization_id:
+      sql: ${TABLE}.organization_id
+      type: string
+    email_status:
+      sql: ${TABLE}.status
+      type: string
+  measures:
+    total_emails:
+      sql: ${TABLE}.id
+      type: count_distinct
