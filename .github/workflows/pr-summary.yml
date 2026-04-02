@@ -7,6 +7,7 @@ on:
 jobs:
   summary:
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       contents: read
       pull-requests: write
@@ -135,16 +136,30 @@ jobs:
             echo "Created new comment"
           fi
 
-          # 打版本影响 label
+          # 打版本影响 label（容错：label 不存在则先创建，所有操作失败不阻塞）
           if [ -n "$VERSION_LABEL" ]; then
+            # 确保 label 存在，不存在则创建
+            LABEL_COLORS="major-change:d73a4a minor-change:fbca04 patch-change:0e8a16"
+            for PAIR in $LABEL_COLORS; do
+              L_NAME="${PAIR%%:*}"
+              L_COLOR="${PAIR##*:}"
+              gh api "repos/${GITHUB_REPOSITORY}/labels" \
+                --method POST \
+                -f name="$L_NAME" \
+                -f color="$L_COLOR" 2>/dev/null || true
+            done
+
+            # 移除旧的版本 label
             for OLD_LABEL in major-change minor-change patch-change; do
               if [ "$OLD_LABEL" != "$VERSION_LABEL" ]; then
                 gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${OLD_LABEL}" \
                   --method DELETE 2>/dev/null || true
               fi
             done
+
+            # 添加新 label
             gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" \
               --method POST \
               --jq '.[] | .name' \
-              -f "labels[]=${VERSION_LABEL}"
+              -f "labels[]=${VERSION_LABEL}" 2>/dev/null || true
           fi
