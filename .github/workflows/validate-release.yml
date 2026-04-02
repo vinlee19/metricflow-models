@@ -11,9 +11,13 @@ jobs:
       contents: write
       issues: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Validate Release Format
         id: validate
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.event.release.tag_name }}
           RELEASE_NAME: ${{ github.event.release.name }}
           RELEASE_BODY: ${{ github.event.release.body }}
@@ -23,19 +27,20 @@ jobs:
 
           # 1. 校验 Tag 格式
           if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            WARNINGS="${WARNINGS}- ⚠️ **Tag 格式不规范**: \`$TAG_NAME\`，建议格式: \`v{MAJOR}.{MINOR}.{PATCH}\`\n"
+            WARNINGS="${WARNINGS}- ⚠️ **Tag 格式不规范**: \`${TAG_NAME}\`，建议格式: \`v{MAJOR}.{MINOR}.{PATCH}\`\n"
           fi
 
           # 2. 校验 Release 标题
           if [ -z "$RELEASE_NAME" ]; then
             WARNINGS="${WARNINGS}- ⚠️ **Release 标题为空**，建议使用版本号作为标题，如 \`v0.1.0\`\n"
           elif [[ ! "$RELEASE_NAME" =~ v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            WARNINGS="${WARNINGS}- ⚠️ **Release 标题建议包含版本号**，当前: \`$RELEASE_NAME\`\n"
+            WARNINGS="${WARNINGS}- ⚠️ **Release 标题建议包含版本号**，当前: \`${RELEASE_NAME}\`\n"
           fi
 
-          # 3. 校验 Target 分支
-          if [ "$TARGET_BRANCH" != "master" ]; then
-            WARNINGS="${WARNINGS}- ⚠️ **建议从 master 分支发布**，当前: \`$TARGET_BRANCH\`\n"
+          # 3. 校验 Target 分支（动态获取默认分支）
+          DEFAULT_BRANCH=$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.default_branch')
+          if [ "$TARGET_BRANCH" != "$DEFAULT_BRANCH" ]; then
+            WARNINGS="${WARNINGS}- ⚠️ **建议从 ${DEFAULT_BRANCH} 分支发布**，当前: \`${TARGET_BRANCH}\`\n"
           fi
 
           # 4. 校验 Release Body
@@ -44,11 +49,9 @@ jobs:
           fi
 
           if [ -n "$WARNINGS" ]; then
-            EOF_MARKER=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
             echo "has_warnings=true" >> "$GITHUB_OUTPUT"
-            echo "warnings<<$EOF_MARKER" >> "$GITHUB_OUTPUT"
-            echo -e "$WARNINGS" >> "$GITHUB_OUTPUT"
-            echo "$EOF_MARKER" >> "$GITHUB_OUTPUT"
+            # 写入 warnings 到文件，避免多行输出问题
+            echo -e "$WARNINGS" > /tmp/warnings.txt
           else
             echo "has_warnings=false" >> "$GITHUB_OUTPUT"
           fi
@@ -60,17 +63,16 @@ jobs:
           TAG_NAME: ${{ github.event.release.tag_name }}
           RELEASE_URL: ${{ github.event.release.html_url }}
           RELEASE_AUTHOR: ${{ github.event.release.author.login }}
-          WARNINGS: ${{ steps.validate.outputs.warnings }}
         run: |
-          gh issue create \
-            --title "⚠️ Release $TAG_NAME 格式提醒" \
-            --assignee "$RELEASE_AUTHOR" \
-            --body "$(cat <<EOF
+          WARNINGS=$(cat /tmp/warnings.txt)
+
+          # 写 issue body 到文件
+          cat > /tmp/issue_body.md << 'TEMPLATE_END'
           ## Release 格式提醒
 
-          @$RELEASE_AUTHOR 你发布的 [$TAG_NAME]($RELEASE_URL) 存在以下格式建议：
+          发布的 Release 存在以下格式建议：
 
-          $WARNINGS
+          WARNINGS_PLACEHOLDER
 
           ---
 
@@ -85,30 +87,37 @@ jobs:
           ### 📝 Release Notes 模板参考
 
           **MINOR 版本（新增模型/View）：**
-          \`\`\`markdown
+          ```markdown
           ## What's New
           ### New Models
           - models/xxx/xxx.yml - 模型描述
           ### New Views
           - views/xxx/xxx_view.yml - 视图描述
-          \`\`\`
+          ```
 
           **PATCH 版本（Bug 修复）：**
-          \`\`\`markdown
+          ```markdown
           ## Bug Fixes
           - 修复 xxx 问题
-          \`\`\`
+          ```
 
           **MAJOR 版本（重大变更）：**
-          \`\`\`markdown
+          ```markdown
           ## Breaking Changes
           - 变更描述
           ## Migration Guide
           - 迁移步骤说明
-          \`\`\`
+          ```
 
-          > 详细规范请查看 [README](../blob/master/README.md)
-          >
           > 如已修正，请关闭此 issue。
-          EOF
-          )"
+          TEMPLATE_END
+
+          # 替换占位符为实际 warnings，并去除行首缩进
+          sed -i "s|WARNINGS_PLACEHOLDER|${WARNINGS}|" /tmp/issue_body.md
+          sed -i 's/^          //' /tmp/issue_body.md
+
+          gh issue create \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "⚠️ Release ${TAG_NAME} 格式提醒" \
+            --assignee "${RELEASE_AUTHOR}" \
+            --body-file /tmp/issue_body.md
